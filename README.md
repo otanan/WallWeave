@@ -21,8 +21,9 @@
 </div>
 
 
-<!-- Project Demo -->
-<!-- https://user-images.githubusercontent.com/6320907/189829171-1e91c3e2-0feb-4e7a-aa12-0a4d899f059b.mp4 -->
+## Example
+![IMG_4787](https://github.com/otanan/WallWeave/assets/6320907/755a88a2-4721-413b-83df-53d4d8a44747)
+A mobile wallpaper extended by WallWeave to fit a 38" ultrawide monitor.
 
 
 <!-- ## Table of contents
