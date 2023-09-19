@@ -34,3 +34,5 @@ build
 _archive
 
 #------------- Project-specific settings -------------#
+# temp folder for holding wallpapers before extension.
+temp
