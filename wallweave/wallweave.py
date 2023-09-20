@@ -11,11 +11,12 @@ import rumps
 import subprocess
 from PIL import Image, ImageFilter, ImageDraw
 import screeninfo
+from pillow_heif import register_heif_opener
+register_heif_opener() # necessary for HEIC files to work
 #--- Custom imports ---#
 # from tools.config import *
 #------------- Fields -------------#
 __version__ = '0.0.0.1'
-BLUR_INTENSITY = 40
 # Scaling algorithm
 SCALING = Image.LANCZOS
 toggle = False
@@ -50,7 +51,7 @@ def get_playlists():
 
 
 #======================== Image Modifiers ========================#
-def extend_img(img):
+def extend_img(img, blur_intensity):
     """ Extend the image to fit into screen space. """
     monitor = screeninfo.get_monitors()[0]
     
@@ -86,29 +87,53 @@ def extend_img(img):
         left = img.crop((0, 0, x_padding, img.height))
         right = img.crop((img.width - x_padding, 0, img.width, img.height))
 
+    # New coordinates for the focus of the image in the center
+    img_x0, img_y0 = x_padding, y_padding
+    # Corrective -2 to adjust for flooring, may cut slightly into image
+    img_x1, img_y1 = img_x0 + img.width, img_y0 + img.height
+
     # The main canvas
     canvas = Image.new('RGBA', (monitor.width, monitor.height), (0, 0, 0, 0))
-    canvas.paste(left, (0, y_padding))
-    canvas.paste(img, (x_padding, y_padding)) # center
-    # - 1 to account for integer flooring
-    canvas.paste(right, (monitor.width - x_padding - 1, y_padding))
+    canvas.paste(left, (0, img_y0))
+    canvas.paste(img, (img_x0, img_y0)) # center
+    # Paste the right portion at the top right corner of the main image
+    canvas.paste(right, (img_x1, img_y0))
 
     # Create rectangle mask
     mask = Image.new('L', canvas.size, 0)
     draw = ImageDraw.Draw(mask)
-    # Blur into the main picture a bit to hide lines
-    buffer = 20
+    # Small buffer to blur into the image to avoid some rounding issues
+    buffer = 1
     draw.rectangle(
-        [ (x_padding + buffer, y_padding),
-        (x_padding + img.width - buffer, y_padding + img.height) ],
+        [ img_x0 + buffer, img_y0, img_x1 - buffer, img_y1 ],
         fill=255
     )
+
+    # Draw a black rectangle for a shadow effect
+    rect_width = 40
+    ImageDraw.Draw(canvas).rectangle(
+        [ img_x1 - (rect_width // 2), img_y0, img_x1 + (rect_width // 2), img_y1 ],
+        fill='black'
+    )
+    ImageDraw.Draw(canvas).rectangle(
+        [ img_x0 - (rect_width // 2), img_y0, img_x0 + (rect_width // 2), img_y1 ],
+        fill='black'
+    )
+
     # Blur the entire canvas
-    blurred = canvas.filter(ImageFilter.GaussianBlur(BLUR_INTENSITY))
+    blurred = canvas.filter(ImageFilter.GaussianBlur(blur_intensity))
     # Reapply the main image over the blurred canvas while using the mask to 
     # indicate where the main image should pass through.
     # Effectively blurs the complement
-    blurred.paste(canvas, mask=mask)
+    # blurred.paste(canvas, mask=mask)
+    blurred.paste(img, (img_x0, img_y0))
+
+    # Single black outline
+    ImageDraw.Draw(blurred).rectangle(
+        [ img_x0, img_y0, img_x1, img_y1 ],
+        outline='black'
+    )
+
     return blurred.convert('RGB')
 
     
@@ -133,6 +158,7 @@ class WallWeave(object):
     def __init__(self):
         self.app = rumps.App('Wallpaper Manager')
         self.playlists = get_playlists()
+        self.blur_intensity = 20
         self.set_up_menu()
 
         # Make the wallpaper change timer
@@ -159,6 +185,19 @@ class WallWeave(object):
         )
         self.slider_label = rumps.MenuItem(
             title=f'Delay: {int(self.delay_slider.value)}s'
+        )
+
+        #--- Blur Intensity Slider ---#
+        # Slider for adjusting time delay of papers
+        self.blur_slider = rumps.SliderMenuItem(
+            value=self.blur_intensity, min_value=0, max_value=100,
+            dimensions=(150, 40), callback=self.on_blur_slide
+        )
+
+
+        # Set default label
+        self.blur_slider_label = rumps.MenuItem(
+            title=f'Blur Radius: {int(self.blur_slider.value)}.'
         )
 
         #--- Pause ---#
@@ -196,6 +235,8 @@ class WallWeave(object):
             self.toggle_pause_button,
             self.slider_label,
             self.delay_slider,
+            self.blur_slider_label,
+            self.blur_slider,
             # { 'Paper Information': [
             self.img_name,
             self.resolution,
@@ -226,8 +267,13 @@ class WallWeave(object):
 
     def on_slide(self, sender):
         value = int(sender.value)
-        self.slider_label.title = f'Delay: {value}s'
+        self.slider_label.title = f'Delay: {value}s.'
         self.make_timer(value)
+
+    def on_blur_slide(self, sender):
+        """ Controls the blur slider. """
+        self.blur_intensity = int(sender.value)
+        self.blur_slider_label.title = f'Blur Radius: {self.blur_intensity}.'
     
 
     def on_tick(self, sender):
@@ -260,9 +306,9 @@ class WallWeave(object):
             self.random_paper()
             return
         # Load and modify while saving path to original
-        self.paper = extend_img(self.img)
+        self.paper = extend_img(self.img, self.blur_intensity)
         # Save the modified version to a temp directory
-        self.paper_path = TEMP_FOLDER / f'{toggle}.jpg'
+        self.paper_path = TEMP_FOLDER / f'{1 * toggle}.jpg'
         self.paper.save(self.paper_path, quality=100, subsampling=0)
         # Flip toggle
         toggle = not toggle

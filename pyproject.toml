@@ -1,0 +1,16 @@
+[tools.py2app.bundle.main]
+# https://py2app.readthedocs.io/en/latest/pyproject.html
+name = 'WallWeave'
+script = 'wallweave/wallweave.py'
+iconfile = 'icon.icns'
+semi-standalone = true
+
+version = "0.0.0.1"
+description = "Project generator for various projects from Python, to LaTeX, teaching, etc."
+authors = ["Jonathan Delgado <jonathandelgado0327@gmail.com>"]
+homepage = "https://jdelgado.net/"
+repository = "https://github.com/otanan/makeproject"
+
+readme = "README.md"
+license = "GNU GENERAL PUBLIC LICENSE"
+include = ["LICENSE"]
