@@ -51,6 +51,7 @@ class WallWeave(object):
         self.playlists = self.get_playlists()
         self.blur_intensity = 20
         self.counter = 0
+        self.history = []
 
         #--- Initialization ---#
         self.update_monitor()
@@ -104,12 +105,11 @@ class WallWeave(object):
     def set_up_menu(self):
         self.app.title = 'WallWeave'
         #--- Delay Slider ---#
-        slider_width = 200
-        slider_height = 30
+        slider_dimensions = (200, 30)
         # Slider for adjusting time delay of papers
         self.delay_slider = rumps.SliderMenuItem(
              value=5, min_value=5, max_value=605,
-            dimensions=(slider_width, slider_height), callback=self.on_slide
+            dimensions=slider_dimensions, callback=self.on_slide
         )
         self.delay_slider._slider.setNumberOfTickMarks_(11)
         self.delay_slider._slider.setAllowsTickMarkValuesOnly_(True)
@@ -122,7 +122,7 @@ class WallWeave(object):
         # Slider for adjusting time delay of papers
         self.blur_slider = rumps.SliderMenuItem(
             value=self.blur_intensity, min_value=0, max_value=100,
-            dimensions=(slider_width, slider_height), callback=self.on_blur_slide
+            dimensions=slider_dimensions, callback=self.on_blur_slide
         )
         self.blur_slider._slider.setNumberOfTickMarks_(11)
         self.blur_slider._slider.setAllowsTickMarkValuesOnly_(True)
@@ -141,7 +141,7 @@ class WallWeave(object):
         self.img_name = rumps.MenuItem(title='Name')
         self.resolution = rumps.MenuItem(title='Resolution: ')
         self.open_paper_button = rumps.MenuItem(
-            title='Open Image', callback=self.open_paper
+            title='Open Image', callback=lambda sender: self.open_paper(self.img_path)
         )
 
         #--- Playlists ---#
@@ -176,13 +176,15 @@ class WallWeave(object):
                 None,
                 ],
             },
+            'History',
             playlists_menu,
         ]
 
 
-    def open_paper(self, _):
-        print(f'Opening original image path: {self.img_path}')
-        subprocess.run(f'open -R "{self.img_path}"', shell=True)
+    def open_paper(self, path=None):
+        if path is None: path = self.img_path
+        print(f'Opening original image path: {path}')
+        subprocess.run(f'open -R "{path}"', shell=True)
 
 
     def toggle_pause(self, _):
@@ -246,6 +248,29 @@ class WallWeave(object):
         # Save the modified version to a temp directory
         self.paper_path = TEMP_FOLDER / f'{serial()}.jpg'
         self.paper.save(self.paper_path, quality=100, subsampling=0)
+        self.update_history(self.img_path)
+
+
+    def update_history(self, paper_path):
+        # Refresh history buttons
+        if self.history:
+            self.app.menu['History'].clear()
+
+        # Manages the history of papers
+        self.history.append(paper_path)
+        # Remove the item if the history is too long
+        if len(self.history) > 10: self.history.pop(0)
+
+        history_buttons = [
+            rumps.MenuItem(
+                title=path,
+                callback=lambda sender: self.open_paper(sender.title)
+            )
+            for path in self.history
+        ]
+
+        self.app.menu['History'].update(history_buttons)
+        
 
 
     def mark_playlist_state(self, playlist_name):
