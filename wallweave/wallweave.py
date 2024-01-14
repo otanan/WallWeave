@@ -7,22 +7,30 @@
 #------------- Imports -------------#
 from pathlib import Path
 import random
-import rumps
+import rumps # menu bar
 import subprocess
 from PIL import Image, ImageFilter, ImageDraw
-import screeninfo
-from pillow_heif import register_heif_opener
+from pillow_heif import register_heif_opener # working with heic
 register_heif_opener() # necessary for HEIC files to work
+import screeninfo # getting monitor information
+from datetime import datetime # used for serializing temp paths
 #--- Custom imports ---#
-# from tools.config import *
+import image_extender
+import paper_manager
 #------------- Fields -------------#
-__version__ = '0.0.0.1'
-# Scaling algorithm
-SCALING = Image.LANCZOS
-toggle = False
-PAPERS_PATH = Path.home() / 'Drive/Wallpapers/Laptop'
+__version__ = '0.0.0.2'
+PAPERS_PATH = Path.home() / 'Drive/Wallpapers'
+# temp folder inside of project directory
 TEMP_FOLDER = Path(__file__).parent.parent / 'temp'
+
 #======================== Helpers ========================#
+def clear_temp_folder():
+    """ Clears any files in the temp folder to avoid any accidentaly reusing. """
+    print('Clearing temp folder...')
+    for file in TEMP_FOLDER.iterdir():
+        file.unlink()
+
+
 def should_extend_img(img, monitor):
     """ Checks whether we should bother extending the image. Maybe the image is wide enough. """
     width_percentage = 0.9
@@ -30,139 +38,57 @@ def should_extend_img(img, monitor):
     return img.size[0] < monitor.width * width_percentage
 
 
-def change_to_random_paper():
-    path, img = random_paper()
-    change_all_papers(path)
-    return img
-
-
-def get_playlists():
-    """ Get all available folders with images. """
-    playlists = {
-        f.name: {
-            'name': f.name,
-            'path': f
-        }
-        for f in PAPERS_PATH.iterdir()
-        if not f.is_file()
-    }
-    playlists.update({'All': {'name': 'All', 'path': PAPERS_PATH}})
-    return playlists
-
-
-#======================== Image Modifiers ========================#
-def extend_img(img, blur_intensity):
-    """ Extend the image to fit into screen space. """
-    monitor = screeninfo.get_monitors()[0]
-    
-    # Rescale the image to fit into display
-    # img.thumbnail((monitor.width, monitor.height), SCALING)
-    aspect_ratio = monitor.width / monitor.height
-    monitor.width = int(img.height * aspect_ratio)
-    monitor.height = img.height
-
-    if not should_extend_img(img, monitor):
-        print('Not going to extend this image.')
-        return img.convert('RGB')
-
-    # The padding we need on the left, i.e. we'll have the main image start here
-    # This also indicates the width of the left portion of the blur.
-    x_padding = (monitor.width - img.width) // 2
-    # Check if we're cutting off more than half
-    # y_padding = (monitor.height - img.height) // 2
-    y_padding = 0
-
-    if x_padding > img.width / 2:
-        # The image is not wide enough, we'd be cutting off more than half
-        # Let's stretch it first
-        left_width = img.width // 2
-        left = img.crop((0, 0, left_width, img.height))
-        right = img.crop((left_width, 0, img.width, img.height))
-        # Stretch it
-        left = left.resize((x_padding, img.height), SCALING)
-        right = right.resize((x_padding, img.height), SCALING)
-
-    else:
-        # Get the left portion of the image for blurring, it's big enough
-        left = img.crop((0, 0, x_padding, img.height))
-        right = img.crop((img.width - x_padding, 0, img.width, img.height))
-
-    # New coordinates for the focus of the image in the center
-    img_x0, img_y0 = x_padding, y_padding
-    # Corrective -2 to adjust for flooring, may cut slightly into image
-    img_x1, img_y1 = img_x0 + img.width, img_y0 + img.height
-
-    # The main canvas
-    canvas = Image.new('RGBA', (monitor.width, monitor.height), (0, 0, 0, 0))
-    canvas.paste(left, (0, img_y0))
-    canvas.paste(img, (img_x0, img_y0)) # center
-    # Paste the right portion at the top right corner of the main image
-    canvas.paste(right, (img_x1, img_y0))
-
-    # Create rectangle mask
-    mask = Image.new('L', canvas.size, 0)
-    draw = ImageDraw.Draw(mask)
-    # Small buffer to blur into the image to avoid some rounding issues
-    buffer = 1
-    draw.rectangle(
-        [ img_x0 + buffer, img_y0, img_x1 - buffer, img_y1 ],
-        fill=255
-    )
-
-    # Draw a black rectangle for a shadow effect
-    rect_width = 40
-    ImageDraw.Draw(canvas).rectangle(
-        [ img_x1 - (rect_width // 2), img_y0, img_x1 + (rect_width // 2), img_y1 ],
-        fill='black'
-    )
-    ImageDraw.Draw(canvas).rectangle(
-        [ img_x0 - (rect_width // 2), img_y0, img_x0 + (rect_width // 2), img_y1 ],
-        fill='black'
-    )
-
-    # Blur the entire canvas
-    blurred = canvas.filter(ImageFilter.GaussianBlur(blur_intensity))
-    # Reapply the main image over the blurred canvas while using the mask to 
-    # indicate where the main image should pass through.
-    # Effectively blurs the complement
-    # blurred.paste(canvas, mask=mask)
-    blurred.paste(img, (img_x0, img_y0))
-
-    # Single black outline
-    ImageDraw.Draw(blurred).rectangle(
-        [ img_x0, img_y0, img_x1, img_y1 ],
-        outline='black'
-    )
-
-    return blurred.convert('RGB')
-
-    
-#======================== MacOS Interactions ========================#
-def change_all_papers(img_path):
-    """ Changes wallpapers on all screens. """
-    # Convert to path format for Applescript
-    path = str(img_path).replace('/', ':')
-    script = f"""/usr/bin/osascript<<END
-tell application "System Events"
-    tell every desktop
-        set picture rotation to 0
-        set picture to "Macintosh HD{path}"
-    end tell
-end tell
-END"""
-    subprocess.run(script, shell=True)
+def serial():
+    """ Generates a timestamp used for temporarily serializing a file down to the seconds. """
+    return datetime.now().strftime("%I-%M-%S")
 
 
 #======================== MenuBar ========================#
 class WallWeave(object):
     def __init__(self):
         self.app = rumps.App('Wallpaper Manager')
-        self.playlists = get_playlists()
+        #--- Settings ---#
+        self.playlists = self.get_playlists()
         self.blur_intensity = 20
-        self.set_up_menu()
+        self.counter = 0
 
+        #--- Initialization ---#
+        self.update_monitor()
+        clear_temp_folder()
+        self.set_up_menu()
         # Make the wallpaper change timer
         self.make_timer(5)
+
+
+    def update_monitor(self):
+        """ Gets the most relevant monitor information. """
+        self.monitor = screeninfo.get_monitors()[0]
+
+
+    def get_playlists(self):
+        """ Get all available folders with images. """
+        playlists = {
+            f.name: {
+                'name': f.name,
+                'path': f
+            }
+            for f in PAPERS_PATH.iterdir()
+            if not f.is_file()
+        }
+        playlists.update({'All': {'name': 'All', 'path': PAPERS_PATH}})
+        return playlists
+
+
+    def update_counter(self):
+        self.counter += 1
+        self.check_counter()
+
+
+    def check_counter(self):
+        """ Calls functions that should happen after a certain number of runs. """
+        if self.counter % 10 == 9:
+            # Clear the temp folder every 10th run
+            clear_temp_folder()
 
 
     def make_timer(self, delay):
@@ -178,11 +104,16 @@ class WallWeave(object):
     def set_up_menu(self):
         self.app.title = 'WallWeave'
         #--- Delay Slider ---#
+        slider_width = 200
+        slider_height = 30
         # Slider for adjusting time delay of papers
         self.delay_slider = rumps.SliderMenuItem(
-             value=5, min_value=5, max_value=600,
-            dimensions=(150, 40), callback=self.on_slide
+             value=5, min_value=5, max_value=605,
+            dimensions=(slider_width, slider_height), callback=self.on_slide
         )
+        self.delay_slider._slider.setNumberOfTickMarks_(11)
+        self.delay_slider._slider.setAllowsTickMarkValuesOnly_(True)
+
         self.slider_label = rumps.MenuItem(
             title=f'Delay: {int(self.delay_slider.value)}s'
         )
@@ -191,9 +122,10 @@ class WallWeave(object):
         # Slider for adjusting time delay of papers
         self.blur_slider = rumps.SliderMenuItem(
             value=self.blur_intensity, min_value=0, max_value=100,
-            dimensions=(150, 40), callback=self.on_blur_slide
+            dimensions=(slider_width, slider_height), callback=self.on_blur_slide
         )
-
+        self.blur_slider._slider.setNumberOfTickMarks_(11)
+        self.blur_slider._slider.setAllowsTickMarkValuesOnly_(True)
 
         # Set default label
         self.blur_slider_label = rumps.MenuItem(
@@ -237,14 +169,14 @@ class WallWeave(object):
             self.delay_slider,
             self.blur_slider_label,
             self.blur_slider,
-            # { 'Paper Information': [
-            self.img_name,
-            self.resolution,
             self.open_paper_button,
+            { 'Paper Information': [
+                self.img_name,
+                self.resolution,
+                None,
+                ],
+            },
             playlists_menu,
-            None,
-                # ],
-            # },
         ]
 
 
@@ -270,6 +202,7 @@ class WallWeave(object):
         self.slider_label.title = f'Delay: {value}s.'
         self.make_timer(value)
 
+
     def on_blur_slide(self, sender):
         """ Controls the blur slider. """
         self.blur_intensity = int(sender.value)
@@ -277,11 +210,16 @@ class WallWeave(object):
     
 
     def on_tick(self, sender):
+        self.update_monitor()
+        self.update_counter()
+
         self.random_paper()
-        change_all_papers(self.paper_path)
-        print(f'Paper changed to: {self.img_path.name}')
+        print(f'Changing paper to: {self.img_path.name}')
+        paper_manager.change_all_papers(self.paper_path)
         self.img_name.title = self.img_path.name
         self.resolution.title = f'Resolution: {self.img.width} x {self.img.height}'
+
+        self.counter += 1
 
 
     def random_img_path(self):
@@ -294,8 +232,6 @@ class WallWeave(object):
 
     def random_paper(self):
         """ Change to a random wallpaper and update the information on it. """
-        # Temp toggle to force changing of wallpaper
-        global toggle
         # Path to the original image
         self.img_path = self.random_img_path()
         # The original image
@@ -306,12 +242,10 @@ class WallWeave(object):
             self.random_paper()
             return
         # Load and modify while saving path to original
-        self.paper = extend_img(self.img, self.blur_intensity)
+        self.paper = image_extender.by_blur(self.img, self.monitor, blur_intensity=self.blur_intensity)
         # Save the modified version to a temp directory
-        self.paper_path = TEMP_FOLDER / f'{1 * toggle}.jpg'
+        self.paper_path = TEMP_FOLDER / f'{serial()}.jpg'
         self.paper.save(self.paper_path, quality=100, subsampling=0)
-        # Flip toggle
-        toggle = not toggle
 
 
     def mark_playlist_state(self, playlist_name):
@@ -343,33 +277,7 @@ class WallWeave(object):
 
 #======================== Entry ========================#
 def main():
-    #--- Real ---#
     WallWeave().run()
-    return
-
-    #--- Test image extension ---#
-    orig_path = Path.home() / 'Drive/Wallpapers/Mobile/512ybxga4pv81.jpg'
-    extend_img(Image.open(orig_path)).show()
-    return
-
-
-    #--- Test main ---#
-    # Temp toggle to force changing of wallpaper
-    toggle = False
-    # Get a random image
-    # orig_path = random_img_path()
-    # Force a path
-    img = Image.open(orig_path)
-    # Load and modify while saving path to original
-    img = extend_img(img)
-    # Save the modified version to a temp directory
-    modified_path = temp_folder / f'{toggle}.png'
-    image.save(modified_path, 'PNG')
-    # Flip toggle
-    toggle = not toggle
-    # Change wallpapers
-    # change_all_papers(modified_path)
-    # change_all_papers(orig_path)
 
 
 if __name__ == '__main__':
