@@ -14,11 +14,13 @@ from pillow_heif import register_heif_opener # working with heic
 register_heif_opener() # necessary for HEIC files to work
 import screeninfo # getting monitor information
 from datetime import datetime # used for serializing temp paths
+import os
+os.nice(19) # Decrease the program's CPU priority
 #--- Custom imports ---#
 import image_extender
 import paper_manager
 #------------- Fields -------------#
-__version__ = '0.0.0.2'
+__version__ = '0.0.0.3'
 PAPERS_PATH = Path.home() / 'Drive/Wallpapers'
 # temp folder inside of project directory
 TEMP_FOLDER = Path(__file__).parent.parent / 'temp'
@@ -119,7 +121,7 @@ class WallWeave(object):
         )
 
         #--- Blur Intensity Slider ---#
-        # Slider for adjusting time delay of papers
+        # Slider for intensity of the blurring effect
         self.blur_slider = rumps.SliderMenuItem(
             value=self.blur_intensity, min_value=0, max_value=100,
             dimensions=slider_dimensions, callback=self.on_blur_slide

@@ -5,7 +5,8 @@
 
 """
 #------------- Imports -------------#
-from PIL import Image, ImageFilter, ImageDraw
+# ImageEnhance for controlling brightness
+from PIL import Image, ImageFilter, ImageDraw, ImageEnhance
 import numpy as np
 # import cv2
 #--- Custom imports ---#
@@ -91,6 +92,11 @@ def by_blur(img, monitor, blur_intensity=20):
 
     # Blur the entire canvas
     blurred = canvas.filter(ImageFilter.GaussianBlur(blur_intensity))
+    # Dim it
+    enhancer = ImageEnhance.Brightness(blurred)
+    # to reduce brightness by 50%, use factor 0.5
+    blurred = enhancer.enhance(0.8)
+    # Put the center
     blurred.paste(img, (img_x0, img_y0))
 
     return blurred.convert('RGB')
