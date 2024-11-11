@@ -6,7 +6,7 @@ iconfile = 'icon.icns'
 semi-standalone = true
 
 version = "0.0.0.1"
-description = "Project generator for various projects from Python, to LaTeX, teaching, etc."
+description = "Wallpaper manager for macOS."
 authors = ["Jonathan Delgado <jonathandelgado0327@gmail.com>"]
 homepage = "https://jdelgado.net/"
 repository = "https://github.com/otanan/makeproject"

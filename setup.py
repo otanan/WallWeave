@@ -1,5 +1,5 @@
 from setuptools import setup
-APP = ['wallweave.py']
+APP = ['wallweave/wallweave.py']
 DATA_FILES = []
 OPTIONS = {
     'argv_emulation': True,

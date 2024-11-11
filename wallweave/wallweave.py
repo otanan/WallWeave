@@ -51,7 +51,8 @@ class WallWeave(object):
         self.app = rumps.App('Wallpaper Manager')
         #--- Settings ---#
         self.playlists = self.get_playlists()
-        self.blur_intensity = 20
+        self.modifiers = self.get_modifiers()
+        self.blur_intensity = 30
         self.counter = 0
         self.history = []
 
@@ -59,8 +60,6 @@ class WallWeave(object):
         self.update_monitor()
         clear_temp_folder()
         self.set_up_menu()
-        # Make the wallpaper change timer
-        self.make_timer(5)
 
 
     def update_monitor(self):
@@ -80,6 +79,16 @@ class WallWeave(object):
         }
         playlists.update({'All': {'name': 'All', 'path': PAPERS_PATH}})
         return playlists
+
+
+    def get_modifiers(self):
+        """ Get all available modifiers for images. """
+        self.default_modifier = 'Blur (Matched Aspect Ratio)'
+        return {
+            'Blur (Matched Aspect Ratio)': image_extender.by_matched_ratio_blur,
+            'Blur': image_extender.by_blur,
+            # 'Mirror': image_extender.by_mirror,
+        }
 
 
     def update_counter(self):
@@ -109,8 +118,9 @@ class WallWeave(object):
         #--- Delay Slider ---#
         slider_dimensions = (200, 30)
         # Slider for adjusting time delay of papers
+        timer_default = 605
         self.delay_slider = rumps.SliderMenuItem(
-             value=5, min_value=5, max_value=605,
+            value=timer_default, min_value=5, max_value=605,
             dimensions=slider_dimensions, callback=self.on_slide
         )
         self.delay_slider._slider.setNumberOfTickMarks_(11)
@@ -119,6 +129,9 @@ class WallWeave(object):
         self.slider_label = rumps.MenuItem(
             title=f'Delay: {int(self.delay_slider.value)}s'
         )
+
+        # Make the wallpaper change timer
+        self.make_timer(timer_default)
 
         #--- Blur Intensity Slider ---#
         # Slider for intensity of the blurring effect
@@ -134,9 +147,14 @@ class WallWeave(object):
             title=f'Blur Radius: {int(self.blur_slider.value)}.'
         )
 
+        #--- Next Button ---#
+        self.next_button = rumps.MenuItem(
+            title='Next', callback=self.on_tick
+        )
+
         #--- Pause ---#
         self.toggle_pause_button = rumps.MenuItem(
-            title='Pause', callback=self.toggle_pause
+            title='Pause', callback=lambda _ : self.toggle_pause()
         )
 
         #--- Paper information ---#
@@ -164,8 +182,25 @@ class WallWeave(object):
             'Playlists': sorted_playlists
         }
 
+
+        #--- Modifiers ---#
+        self.modifier_buttons = {
+            name: rumps.MenuItem(
+                title=name,
+                callback=lambda sender: self.change_modifier(sender.title)
+            )
+            for name in self.modifiers
+        }
+        # Set default playlist
+        self.change_modifier(self.default_modifier)
+        
+        modifiers_menu = {
+            'Modifiers': self.modifier_buttons.values()
+        }
+
         #--- Menu Generation ---#
         self.app.menu = [
+            self.next_button,
             self.toggle_pause_button,
             self.slider_label,
             self.delay_slider,
@@ -180,6 +215,7 @@ class WallWeave(object):
             },
             'History',
             playlists_menu,
+            modifiers_menu,
         ]
 
 
@@ -189,7 +225,7 @@ class WallWeave(object):
         subprocess.run(f'open -R "{path}"', shell=True)
 
 
-    def toggle_pause(self, _):
+    def toggle_pause(self):
         if self.toggle_pause_button.title == 'Pause':
             self.timer.stop()
             self.toggle_pause_button.title = 'Play'
@@ -246,7 +282,8 @@ class WallWeave(object):
             self.random_paper()
             return
         # Load and modify while saving path to original
-        self.paper = image_extender.by_blur(self.img, self.monitor, blur_intensity=self.blur_intensity)
+        modifier = self.modifiers[self.modifier]
+        self.paper = modifier(self.img, self.monitor, blur_intensity=self.blur_intensity)
         # Save the modified version to a temp directory
         self.paper_path = TEMP_FOLDER / f'{serial()}.jpg'
         self.paper.save(self.paper_path, quality=100, subsampling=0)
@@ -274,7 +311,6 @@ class WallWeave(object):
         self.app.menu['History'].update(history_buttons)
         
 
-
     def mark_playlist_state(self, playlist_name):
         """ Removes mark from old playlist and adds one to new playlist. """
         marker = ' ✓'
@@ -296,6 +332,30 @@ class WallWeave(object):
         self.mark_playlist_state(playlist_name)
         self.playlist = self.playlists[playlist_name]
         print(f'Playlist changed to: {playlist_name}')
+
+
+    def mark_modifier_state(self, modifier_name):
+        """ Removes mark from old modifier and adds one to new modifier chosen. """
+        marker = ' ✓'
+        if marker == modifier_name[-2:]:
+            # This is the same modifier as already chosen
+            return
+
+        if not hasattr(self, 'modifier'):
+            # Setting default for first run
+            self.modifier_buttons[self.default_modifier].title += marker
+            return
+
+        current_modifier = self.modifier
+        # Remove the marker
+        self.modifier_buttons[current_modifier].title = current_modifier
+        self.modifier_buttons[modifier_name].title += marker
+
+
+    def change_modifier(self, modifier_name):
+        self.mark_modifier_state(modifier_name)
+        self.modifier = modifier_name
+        print(f'Modifier changed to: {modifier_name}')
 
 
     def run(self):
